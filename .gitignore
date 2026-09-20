@@ -216,3 +216,37 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# ==========================================
+# macOS
+# ==========================================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+
+# ==========================================
+# Ubuntu / Linux
+# ==========================================
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ==========================================
+# Autonomous AI Agents
+# ==========================================
+# Ignore local agent memory, history, and workspace files for Roo Code / Zoo Code / Cline
+.cline/
+.roo/
+.cline/
+.zoo/
+.zoocode/
