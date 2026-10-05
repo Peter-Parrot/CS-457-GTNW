@@ -55,6 +55,7 @@
 12. `DISCONNECT` (Client -> Server): Client notifies server of intentional departure/quit.
 13. `DROPPED_PLAYER` (Server -> Client): A player's connection has been lost
 14. `RECONNECT_WAIT` (Server -> Client): Waiting for the dropped player to reconnect
+15, `RECONNECT_TIMEOUT` (Server -> Client): Dropped player took too long to reconnect
 
 #### JSON Protocol Schema:
 ```json
@@ -181,6 +182,15 @@
       "type": "object",
       "properties": {
         "type": { "const": "RECONNECT_WAIT" },
+        "timestamp": { "type": "number" },
+        "message": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "message"]
+    },
+    "RECONNECT_TIMEOUT": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "RECONNECT_TIMEOUT" },
         "timestamp": { "type": "number" },
         "message": { "type": "string" }
       },

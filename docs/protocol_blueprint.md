@@ -1,13 +1,70 @@
-### Framing Rules For Length-Prefixed Framing
+# Framing Rules For Length-Prefixed Framing
 
 Length-Prefixed Framing will be used for all messages sent to and from the server. Each message will have a 2 byte header that will specifiy the byte length of the message. The message payloads will be JSON objects as described below.
 
+### Byte Stream Examlpes
+
+Example 1 (Turn Initialization): The server unlocks the active player's terminal and simultaneously pushes the updated board state.
+```plaintext
+[0x00, 0x32]{"type": "YOUR_TURN", "timestamp": 1728086779.123}[0x00, 0x69]{"type": "STATE_UPDATE", "timestamp": 1728086779.123, "status": "Player 1 Turn", "board": [0, 0, 1, 2]}
+```
+
+Example 2 (Player Actions): A client transmits multiple proposed moves in rapid succession (e.g., scanning a sector and building an interceptor).
+```plaintext
+[0x00, 0x53]{"type": "MOVE", "timestamp": 1728086779.123, "action": "scan", "coordinate": "B4"}[0x00, 0x58]{"type": "MOVE", "timestamp": 1728086779.123, "action": "build abm", "coordinate": "C4"}
+```
+
+Example 3 (Global Escalation): The server broadcasts a cinematic launch warning and immediately sends a control flag to lock the opposing player's terminal.
+```plaintext
+[0x00, 0x68]{"type": "ALERT", "timestamp": 1728086779.123, "message": "WARNING: LAUNCH DETECTED. IMPACT IN 2 TURNS."}[0x00, 0x2D]{"type": "WAIT", "timestamp": 1728086779.123}
+```
+
+Example 4 (Connection Recovery): The server notifies a surviving player of a drop, and then subsequently pushes a message when the connection is restored.
+```plaintext
+[0x00, 0x72]{"type": "DROPPED_PLAYER", "timestamp": 1728086779.123, "message": "Opponent disconnected. Waiting for them to return..."}[0x00, 0x64]{"type": "RECONNECT_WAIT", "timestamp": 1728086779.123, "message": "Reconnected! Restoring game state..."}
+```
+
+Example 5 (Mutually Assured Destruction): The state machine concludes the game, streaming a final status update followed by the cinematic conclusion text.
+```plaintext
+[0x00, 0x60]{"type": "STATE_UPDATE", "timestamp": 1728086779.123, "status": "Draw", "board": [0, 0, 1, 2]}[0x00, 0x84]{"type": "GAME_OVER", "timestamp": 1728086779.123, "result": "Draw", "message": "A strange game. The only winning move is not to play."}
+```
+
+# Message Extraction
+*Read the message header to get the length of the message in bytes
+
+*Read the number of bytes indicated in the header
+
+*Convert the read message into a string
+
+*Parse the string's message JSON object
 
 
+# Connection Termination & Socket Lifecycle Management
+
+## Graceful Disconnections (TCP FIN / 0-Byte EOF)
+A graceful disconnection occurs when a player's client cleanly closes the connection with a DISCONNECT message.
+
+When a payload containes b"", raise a ConnectionResetError to force the server to close the connection.
 
 
+## Abrupt Terminations (TCP RST / Network Drops)
+An abrupt termination happens when a player's internet drops, their computer loses power, or a TCP timeout occurs.
 
-### Message Types
+Catch ConnectionResetError, BrokenPipeError, and ConnectionAbortedError and wait for the player to reconnect to the game.
+
+## The Pause and Recover Protocol
+Whether a player drops gracefully or abruptly  the server must route the event into the same recovery block to protect the flow of the game.
+
+    * Preserve the board: When a socket breaks, the server pauses the game to maintain state
+
+    * Alert the remaining player: The server notifies the remaining player that the other player has disconnected and that it is waiting for them to return.
+
+     * Block and wait: The server then blocks client input until the dropped player establishes reconnects.
+
+    * Resume: Once the player reconnects, the server sends that player the current state of the game, game play is resumed.
+
+
+# Message Types
 
 1. `CONNECT` (Client -> Server): Request to join the game room.
 2. `LOBBY_WAIT` (Server -> Client): Notification that server is waiting for Player 2.
@@ -23,6 +80,8 @@ Length-Prefixed Framing will be used for all messages sent to and from the serve
 12. `DISCONNECT` (Client -> Server): Client notifies server of intentional departure/quit.
 13. `DROPPED_PLAYER` (Server -> Client): A player's connection has been lost
 14. `RECONNECT_WAIT` (Server -> Client): Waiting for the dropped player to reconnect
+
+#
 
 1. CONNECT (Client -> Server)
 
@@ -127,7 +186,7 @@ Length-Prefixed Framing will be used for all messages sent to and from the serve
 12. DISCONNECT (Client -> Server)
 
     Fields:
-    
+
         timestamp (Number): Unix epoch timestamp of the message.
 
     Rules: Notifies the server of an intentional departure (e.g., the user types a quit command). The server can use this to instantly assign a forfeit victory rather than pausing the game to wait for a reconnect.
@@ -150,8 +209,15 @@ Length-Prefixed Framing will be used for all messages sent to and from the serve
 
     Rules: Transmitted to the returning client immediately after they re-establish their TCP socket. It is followed instantly by a STATE_UPDATE payload to bring the dropped terminal back up to speed before resuming the turn loop.
 
+15. RECONNECT_TIMEOUT (Server -> Client)
 
+    Fields:
 
+        timestamp (Number): Unix epoch timestamp of the message.
+
+    Rules: Transmitted to the remaining client when the dropped client does not reconnect to the server after a predetermined amount of time. The state of the current game is dropped and the server resets for a new game. The remaining player is assigned a forfeit victory.
+
+# JSON Schema
 
 ```json
 {
@@ -170,7 +236,7 @@ Length-Prefixed Framing will be used for all messages sent to and from the serve
       "properties": {
         "type": { "const": "LOBBY_WAIT" },
         "timestamp": { "type": "number" },
-        "message": { "type": "string" }
+        "message": { "type": "string" }```
       },
       "required": ["type", "timestamp", "message"]
     },
@@ -281,7 +347,79 @@ Length-Prefixed Framing will be used for all messages sent to and from the serve
         "message": { "type": "string" }
       },
       "required": ["type", "timestamp", "message"]
+    },
+    "RECONNECT_TIMEOUT": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "RECONNECT_TIMEOUT" },
+        "timestamp": { "type": "number" },
+        "message": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "message"]
     }
   }
 }
+```
+
+# Example Message Wire Streams
+
+1. CONNECT (Byte Length: 85 | Hex: 0x0055)
+```plaintext
+[0x00, 0x55]{"type": "CONNECT", "timestamp": 1728086779.123, "session_id": "terminal_01"}
+```
+2. LOBBY_WAIT (Byte Length: 90 | Hex: 0x005A)
+```plaintext
+[0x00, 0x5A]{"type": "LOBBY_WAIT", "timestamp": 1728086779.123, "message": "Waiting for opponent..."}
+```
+3. GAME_START (Byte Length: 74 | Hex: 0x004A)
+```plaintext
+[0x00, 0x4A]{"type": "GAME_START", "timestamp": 1728086779.123, "role": "Player 1"}
+```
+4. YOUR_TURN (Byte Length: 50 | Hex: 0x0032)
+```plaintext
+[0x00, 0x32]{"type": "YOUR_TURN", "timestamp": 1728086779.123}
+```
+5. MOVE (Byte Length: 85 | Hex: 0x0055)
+```plaintext
+[0x00, 0x55]{"type": "MOVE", "timestamp": 1728086779.123, "action": "launch", "coordinate": "D4"}
+```
+6. WAIT (Byte Length: 45 | Hex: 0x002D)
+```plaintext
+[0x00, 0x2D]{"type": "WAIT", "timestamp": 1728086779.123}
+```
+7. ILLEGAL_MOVE (Byte Length: 95 | Hex: 0x005F)
+```plaintext
+[0x00, 0x5F]{"type": "ILLEGAL_MOVE", "timestamp": 1728086779.123, "reason": "Insufficient DEFCON budget."}
+```
+8. ALERT (Byte Length: 104 | Hex: 0x0068)
+```plaintext
+[0x00, 0x68]{"type": "ALERT", "timestamp": 1728086779.123, "message": "WARNING: LAUNCH DETECTED. IMPACT IN 2 TURNS."}
+```
+9. STATE_UPDATE (Byte Length: 119 | Hex: 0x0077)
+```plaintext
+[0x00, 0x77]{"type": "STATE_UPDATE", "timestamp": 1728086779.123, "status": "Player 2 Turn", "board": [0, 0, 1, 2, 0, 0, 0, 0, 0, 0]}
+```
+10. GAME_OVER (Byte Length: 132 | Hex: 0x0084)
+```plaintext
+[0x00, 0x84]{"type": "GAME_OVER", "timestamp": 1728086779.123, "result": "Draw", "message": "A strange game. The only winning move is not to play."}
+```
+11. ERROR (Byte Length: 97 | Hex: 0x0061)
+```plaintext
+[0x00, 0x61]{"type": "ERROR", "timestamp": 1728086779.123, "error_message": "Malformed JSON payload received."}
+```
+12. DISCONNECT (Byte Length: 51 | Hex: 0x0033)
+```plaintext
+[0x00, 0x33]{"type": "DISCONNECT", "timestamp": 1728086779.123}
+```
+13. DROPPED_PLAYER (Byte Length: 114 | Hex: 0x0072)
+```plaintext
+[0x00, 0x72]{"type": "DROPPED_PLAYER", "timestamp": 1728086779.123, "message": "Opponent disconnected. Waiting for them to return..."}
+```
+14. RECONNECT_WAIT (Byte Length: 100 | Hex: 0x0064)
+```plaintext
+[0x00, 0x64]{"type": "RECONNECT_WAIT", "timestamp": 1728086779.123, "message": "Reconnected! Restoring game state..."}
+```
+15. RECONNECT_TIMEOUT (Byte Length: 122 | Hex: 0x007A)
+```plaintext
+[0x00, 0x7A]{"type": "RECONNECT_TIMEOUT", "timestamp": 1728086779.123, "message": "Opponent failed to reconnect within 60 seconds. Match forfeited."}
 ```

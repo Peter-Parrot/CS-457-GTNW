@@ -28,5 +28,6 @@ stateDiagram-v2
     IN_GAME --> PAUSED : DROPPED_PLAYER
     IN_GAME --> LOBBY : DISCONNECT Player has quit the game
     PAUSED --> IN_GAME : CONNECT
+    PAUSED --> LOBBY : RECONNECT_TIMEOUT
     IN_GAME --> LOBBY: GAME_OVER, reset for new game
 ```
