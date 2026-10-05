@@ -35,8 +35,8 @@
 
 ### 2.1 Message Transport & Serialization Format
 - **Transport Protocol:** TCP
-- **Serialization Format:** [JSON / Fixed-Header Binary / Delimited Text]
-- **Framing Mechanism:** [e.g., Newline-delimited (`\n`) JSON payloads OR 4-byte big-endian length prefix]
+- **Serialization Format:** Fixed-Width Binary Header
+- **Framing Mechanism:** 2-byte big-endian length prefix
 
 ### 2.2 Message Schema Definitions
 
@@ -44,28 +44,187 @@
 1. `CONNECT` (Client -> Server): Request to join the game room.
 2. `LOBBY_WAIT` (Server -> Client): Notification that server is waiting for Player 2.
 3. `GAME_START` (Server -> Clients): Game initiated, assigns roles (e.g. Player X vs Player O).
-4. `MOVE` (Client -> Server): Player action (e.g., cell coordinates or answer choice).
-5. `STATE_UPDATE` (Server -> Clients): Broadcast current game board / state and active player turn.
-6. `GAME_OVER` (Server -> Clients): Victory / Draw notification with final scores.
-7. `ERROR` (Server -> Client): Invalid move or malformed packet error.
+4. `YOUR_TURN` (Server -> Client): Inform player that it is their turn.
+5. `MOVE` (Client -> Server): Player action (e.g., cell coordinates or answer choice).
+6. `WAIT` (Server -> Client): Player needs to wait fo the other player to take their turn.
+7. `ILLEGAL_MOVE` (Server -> Client): Player has made an illegal move, player needs to re-do their move.n a vague alert
+8. `ALERT` (Server -> Clients): Inform players of game conditions (Missle launches, radiation levels, DEFCON levels, etc.).
+9. `STATE_UPDATE` (Server -> Clients): Broadcast current game board / state and active player turn.
+10. `GAME_OVER` (Server -> Clients): Victory / Draw notification with final scores.
+11. `ERROR` (Server -> Client): Invalid move or malformed packet error.
+12. `DISCONNECT` (Client -> Server): Client notifies server of intentional departure/quit.
+13. `DROPPED_PLAYER` (Server -> Client): A player's connection has been lost
+14. `RECONNECT_WAIT` (Server -> Client): Waiting for the dropped player to reconnect
 
-#### Example JSON Protocol Schema:
+#### JSON Protocol Schema:
 ```json
 {
-  "msg_type": "MOVE",
-  "player_id": "Player_1",
-  "payload": {
-    "row": 0,
-    "col": 2
-  },
-  "timestamp": 1727000000
+  "definitions": {
+    "CONNECT": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "CONNECT" },
+        "timestamp": { "type": "number" },
+        "session_id": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "session_id"]
+    },
+    "LOBBY_WAIT": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "LOBBY_WAIT" },
+        "timestamp": { "type": "number" },
+        "message": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "message"]
+    },
+    "GAME_START": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "GAME_START" },
+        "timestamp": { "type": "number" },
+        "role": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "role"]
+    },
+    "YOUR_TURN": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "YOUR_TURN" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["type", "timestamp"]
+    },
+    "MOVE": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "MOVE" },
+        "timestamp": { "type": "number" },
+        "action": { "type": "string", "enum": ["scan", "build abm", "launch"] },
+        "coordinate": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "action", "coordinate"]
+    },
+    "WAIT": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "WAIT" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["type", "timestamp"]
+    },
+    "ILLEGAL_MOVE": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ILLEGAL_MOVE" },
+        "timestamp": { "type": "number" },
+        "reason": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "reason"]
+    },
+    "ALERT": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ALERT" },
+        "timestamp": { "type": "number" },
+        "message": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "message"]
+    },
+    "STATE_UPDATE": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "STATE_UPDATE" },
+        "timestamp": { "type": "number" },
+        "status": { "type": "string" },
+        "board": { "type": "array", "items": { "type": "integer" } }
+      },
+      "required": ["type", "timestamp", "status", "board"]
+    },
+    "GAME_OVER": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "GAME_OVER" },
+        "timestamp": { "type": "number" },
+        "result": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "result", "message"]
+    },
+    "ERROR": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ERROR" },
+        "timestamp": { "type": "number" },
+        "error_message": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "error_message"]
+    },
+    "DISCONNECT": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "DISCONNECT" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["type", "timestamp"]
+    },
+    "DROPPED_PLAYER": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "DROPPED_PLAYER" },
+        "timestamp": { "type": "number" },
+        "message": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "message"]
+    },
+    "RECONNECT_WAIT": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "RECONNECT_WAIT" },
+        "timestamp": { "type": "number" },
+        "message": { "type": "string" }
+      },
+      "required": ["type", "timestamp", "message"]
+    }
+  }
 }
 ```
 
 ---
 
 ### 2.3 Game State Machine (FSM) Design (Sprint 1 Deliverable)
-- **State Transitions:** Detail state flow: `INIT` -> `WAITING_FOR_PLAYERS` -> `PLAYER_TURN` -> `EVALUATE_MOVE` -> `CHECK_WIN_DRAW` -> `GAME_OVER` -> `CLEANUP`.
+```mermaid
+
+stateDiagram-v2
+    [*] --> LOBBY : CONNECT (Player 1)
+
+    state LOBBY {
+        [*] --> Waiting_For_Player
+        Waiting_For_Player --> Waiting_For_Player : LOBBY_WAIT
+        Waiting_For_Player --> [*] : CONNECT (Player 2)
+    }
+
+    LOBBY --> IN_GAME : GAME_START
+
+    state IN_GAME {
+        Turn_Tracker --> Player_Input : Server sends YOUR_TURN & WAIT to respective clients
+        Player_Input --> Move_Validation : Current turn client sends MOVE to server
+        Player_Input --> Player_Input : Not current turn client waits
+        Move_Validation --> Player_Input : Server sends ILLEGAL_MOVE / ERROR to current turn client
+        Move_Validation --> Execute_Move : Valid Move
+        Execute_Move --> Turn_Tracker : Win or draw condition not met, Server sends ALERT & STATE_UPDATE
+        Execute_Move --> EndState : Win or draw condition met
+        EndState --> [*] : Server sends STATE_UPDATE and final score TO clients
+    }
+
+    state PAUSED{
+        Waiting_For_Reconnect --> Waiting_For_Reconnect : RECONNECT_WAIT
+    }
+    IN_GAME --> PAUSED : DROPPED_PLAYER
+    IN_GAME --> LOBBY : DISCONNECT Player has quit the game
+    PAUSED --> IN_GAME : CONNECT
+    IN_GAME --> LOBBY: GAME_OVER, reset for new game
+```
 
 ---
 
