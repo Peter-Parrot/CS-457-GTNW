@@ -1,3 +1,5 @@
+```mermaid
+
 stateDiagram-v2
     [*] --> LOBBY : CONNECT (Player 1)
 
@@ -27,3 +29,4 @@ stateDiagram-v2
     IN_GAME --> LOBBY : DISCONNECT Player has quit the game
     PAUSED --> IN_GAME : CONNECT
     IN_GAME --> LOBBY: GAME_OVER, reset for new game
+```
